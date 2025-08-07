@@ -419,23 +419,76 @@ def run_parallel_simulation(total_hands: int = 10000000) -> Dict:
     return {'hands': final_results, 'wilds': wild_stats}
 
 
-def format_results(results: Dict, num_hands: int):
-    """Formats and displays the simulation results"""
+def calculate_win_probabilities(results: Dict) -> Dict:
+    """Calculate win probabilities for each hand against multiple opponents"""
+    hand_stats = results['hands']
     
-    print("=" * 85)
+    # Order hands from best to worst
+    hand_order = [
+        HandType.FIVE_OF_A_KIND,
+        HandType.ROYAL_FLUSH,
+        HandType.STRAIGHT_FLUSH,
+        HandType.FOUR_OF_A_KIND,
+        HandType.FULL_HOUSE,
+        HandType.FLUSH,
+        HandType.STRAIGHT,
+        HandType.THREE_OF_A_KIND,
+        HandType.TWO_PAIR,
+        HandType.ONE_PAIR,
+        HandType.HIGH_CARD
+    ]
+    
+    win_probs = {}
+    
+    # Calculate cumulative probabilities
+    cumulative = 0
+    cumulative_probs = {}
+    for hand_type in hand_order:
+        cumulative += hand_stats[hand_type]['probability']
+        cumulative_probs[hand_type] = cumulative
+    
+    # Now calculate win probabilities
+    for hand_type in hand_order:
+        if hand_stats[hand_type]['count'] > 0:
+            # This hand beats everything below it in the hierarchy
+            # Probability opponent has worse = 1 - P(opponent has this or better)
+            prob_this_or_better = cumulative_probs[hand_type]
+            prob_opponent_worse = 1 - prob_this_or_better + hand_stats[hand_type]['probability']
+            
+            # Win probability against N-1 opponents
+            win_probs[hand_type] = {
+                2: prob_opponent_worse ** 1,  # 1 opponent
+                3: prob_opponent_worse ** 2,  # 2 opponents
+                4: prob_opponent_worse ** 3,  # 3 opponents
+                5: prob_opponent_worse ** 4,  # 4 opponents
+                6: prob_opponent_worse ** 5   # 5 opponents
+            }
+        else:
+            win_probs[hand_type] = {2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
+    
+    return win_probs
+
+
+def format_results(results: Dict, num_hands: int):
+    """Formats and displays the simulation results with win probabilities"""
+    
+    print("=" * 100)
     print("7-CARD STUD WITH LOW HOLE CARD WILD - 10 MILLION HAND ANALYSIS")
-    print("=" * 85)
+    print("=" * 100)
     print()
     
     print(f"Total hands simulated: {num_hands:,}")
     print()
     
-    # Hand type distribution
-    print("=" * 85)
-    print("HAND TYPE PROBABILITIES (10M Simulations - High Precision)")
-    print("-" * 85)
-    print(f"{'Rank':<5} {'Hand Type':<20} {'Frequency':>12} {'Probability':>12} {'Percentage':>10} {'Odds':>12}")
-    print("-" * 85)
+    # Calculate win probabilities
+    win_probs = calculate_win_probabilities(results)
+    
+    # Hand type distribution with win probabilities
+    print("=" * 100)
+    print("COMPLETE WIN PROBABILITY TABLE")
+    print("-" * 100)
+    print(f"{'Hand Type':<18} {'Percentage':>8} | {'2 Players':>10} {'3 Players':>10} {'4 Players':>10} {'5 Players':>10} {'6 Players':>10}")
+    print("-" * 100)
     
     hand_stats = results['hands']
     hand_names = {
@@ -452,23 +505,42 @@ def format_results(results: Dict, num_hands: int):
         HandType.FIVE_OF_A_KIND: "Five of a Kind"
     }
     
-    # Display from best to worst with rank numbers
-    rank = 1
-    for hand_type in reversed(list(HandType)):
+    # Display from best to worst
+    hand_order = [
+        HandType.FIVE_OF_A_KIND,
+        HandType.ROYAL_FLUSH,
+        HandType.STRAIGHT_FLUSH,
+        HandType.FOUR_OF_A_KIND,
+        HandType.FULL_HOUSE,
+        HandType.FLUSH,
+        HandType.STRAIGHT,
+        HandType.THREE_OF_A_KIND,
+        HandType.TWO_PAIR,
+        HandType.ONE_PAIR,
+        HandType.HIGH_CARD
+    ]
+    
+    for hand_type in hand_order:
         stats = hand_stats[hand_type]
         
-        # Only show hands that actually occur
         if stats['count'] > 0:
-            if stats['probability'] > 0:
-                odds = f"1:{int(1/stats['probability']-1):,}"
-            else:
-                odds = "N/A"
+            # Round percentage to nearest integer
+            pct = round(stats['percentage'])
             
-            print(f"{rank:<5} {hand_names[hand_type]:<20} {stats['count']:>12,} {stats['probability']:>12.8f} "
-                  f"{stats['percentage']:>9.5f}% {odds:>12}")
-            rank += 1
+            # Get win probabilities, rounded to nearest integer
+            wp = win_probs[hand_type]
+            win_2p = round(wp[2] * 100)
+            win_3p = round(wp[3] * 100)
+            win_4p = round(wp[4] * 100)
+            win_5p = round(wp[5] * 100)
+            win_6p = round(wp[6] * 100)
+            
+            print(f"{hand_names[hand_type]:<18} {pct:>7}% | {win_2p:>9}% {win_3p:>9}% {win_4p:>9}% {win_5p:>9}% {win_6p:>9}%")
+        elif hand_type in [HandType.TWO_PAIR, HandType.HIGH_CARD]:
+            # Show impossible hands with dashes
+            print(f"{hand_names[hand_type]:<18} {0:>7}% | {'-':>10} {'-':>10} {'-':>10} {'-':>10} {'-':>10}")
     
-    print("-" * 85)
+    print("-" * 100)
     
     # Wild card distribution
     print()
